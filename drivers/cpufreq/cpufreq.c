@@ -931,6 +931,9 @@ static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
 	if (!cpu_maps_update_trybegin())
 		return ret;
 
+	if (!fattr->show)
+		return -EIO;
+
 	down_read(&policy->rwsem);
 
 	if (fattr->show)
@@ -951,8 +954,8 @@ static ssize_t store(struct kobject *kobj, struct attribute *attr,
 	struct freq_attr *fattr = to_attr(attr);
 	ssize_t ret = -EINVAL;
 
-	if (!cpu_maps_update_trybegin())
-		return ret;
+	if (!fattr->store)
+		return -EIO;
 
 	get_online_cpus();
 
@@ -1745,6 +1748,9 @@ void cpufreq_resume(void)
 	struct cpufreq_policy *policy;
 
 	if (!cpufreq_driver)
+		return;
+
+	if (unlikely(!cpufreq_suspended))
 		return;
 
 	cpufreq_suspended = false;
@@ -2640,14 +2646,6 @@ int cpufreq_unregister_driver(struct cpufreq_driver *driver)
 }
 EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
 
-/*
- * Stop cpufreq at shutdown to make sure it isn't holding any locks
- * or mutexes when secondary CPUs are halted.
- */
-static struct syscore_ops cpufreq_syscore_ops = {
-	.shutdown = cpufreq_suspend,
-};
-
 struct kobject *cpufreq_global_kobject;
 EXPORT_SYMBOL(cpufreq_global_kobject);
 
@@ -2658,8 +2656,6 @@ static int __init cpufreq_core_init(void)
 
 	cpufreq_global_kobject = kobject_create_and_add("cpufreq", &cpu_subsys.dev_root->kobj);
 	BUG_ON(!cpufreq_global_kobject);
-
-	register_syscore_ops(&cpufreq_syscore_ops);
 
 	return 0;
 }
